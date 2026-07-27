@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet, TextInput,
-  Alert, Modal, Platform, Image,
+  Alert, Modal, Platform,
 } from 'react-native';
 import api from '../services/api';
 import { colors } from '../theme';
 import BarcodeScanner from '../components/BarcodeScanner';
+import SellItLogo from '../components/SellItLogo';
 
-export default function InventoryScreen() {
+export default function InventoryScreen({ user, onLogout }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -17,6 +18,7 @@ export default function InventoryScreen() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [form, setForm] = useState({ name: '', barcode: '', price: '', cost: '', stock: '', category: '' });
   const [adjustQty, setAdjustQty] = useState('1');
+  const [autoFetchedNotice, setAutoFetchedNotice] = useState('');
 
   const loadProducts = async () => {
     try {
@@ -39,8 +41,6 @@ export default function InventoryScreen() {
     return () => clearTimeout(delay);
   }, [search]);
 
-  const [autoFetchedNotice, setAutoFetchedNotice] = useState('');
-
   const handleScan = useCallback(async (code) => {
     setScanning(false);
     try {
@@ -58,7 +58,7 @@ export default function InventoryScreen() {
           stock: p.stock ? String(p.stock) : '10',
           category: p.category || 'General',
         });
-        setAutoFetchedNotice(`✨ Auto-fetched: "${p.name}" (${p.category})`);
+        setAutoFetchedNotice(`Auto-fetched: "${p.name}" (${p.category})`);
         setShowAddModal(true);
       }
     } catch (err) {
@@ -84,10 +84,33 @@ export default function InventoryScreen() {
       });
       setShowAddModal(false);
       setForm({ name: '', barcode: '', price: '', cost: '', stock: '', category: '' });
+      setAutoFetchedNotice('');
       loadProducts();
     } catch (err) {
       Alert.alert('Error', err.message);
     }
+  };
+
+  const handleDeleteProduct = (product) => {
+    Alert.alert(
+      'Delete Product',
+      `Are you sure you want to delete "${product.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.deleteProduct(product.id);
+              loadProducts();
+            } catch (err) {
+              Alert.alert('Error', err.message);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleAdjust = async (type) => {
@@ -106,6 +129,13 @@ export default function InventoryScreen() {
     } catch (err) {
       Alert.alert('Error', err.message);
     }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Sign out of Sell-It?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: onLogout },
+    ]);
   };
 
   if (scanning) {
@@ -127,11 +157,21 @@ export default function InventoryScreen() {
         </Text>
         <Text style={styles.productBarcode}>Barcode: {item.barcode || 'N/A'}</Text>
       </View>
-      <View style={styles.stockBadge}>
-        <Text style={[styles.stockText, item.stock < 10 && styles.stockLow]}>
-          {item.stock}
-        </Text>
-        <Text style={styles.stockLabel}>in stock</Text>
+      <View style={styles.productActions}>
+        <View style={styles.stockBadge}>
+          <Text style={[styles.stockText, item.stock < 10 && styles.stockLow]}>
+            {item.stock}
+          </Text>
+          <Text style={styles.stockLabel}>in stock</Text>
+        </View>
+        {user?.role === 'admin' && (
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => handleDeleteProduct(item)}
+          >
+            <Text style={styles.deleteBtnText}>Delete</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -139,19 +179,25 @@ export default function InventoryScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerTitleGroup}>
-          <View style={styles.headerDot} />
+        <View style={styles.headerLeft}>
+          <SellItLogo size={32} />
           <Text style={styles.headerTitle}>Inventory</Text>
         </View>
-        <View style={styles.headerActions}>
+        <View style={styles.headerRight}>
           <TouchableOpacity onPress={() => setScanning(true)} style={styles.headerBtn}>
-            <Text style={styles.headerBtnText}>📷 Scan</Text>
+            <Text style={styles.headerBtnText}>Scan</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => {
-            setForm({ name: '', barcode: '', price: '', cost: '', stock: '', category: '' });
-            setShowAddModal(true);
-          }} style={styles.headerBtnPrimary}>
-            <Text style={styles.headerBtnPrimaryText}>+ Add</Text>
+          {user?.role === 'admin' && (
+            <TouchableOpacity onPress={() => {
+              setForm({ name: '', barcode: '', price: '', cost: '', stock: '', category: '' });
+              setAutoFetchedNotice('');
+              setShowAddModal(true);
+            }} style={styles.headerBtnPrimary}>
+              <Text style={styles.headerBtnPrimaryText}>+ Add</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+            <Text style={styles.logoutBtnText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -253,14 +299,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  headerTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.primary },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
-  headerActions: { flexDirection: 'row', gap: 8 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: colors.primaryLight },
   headerBtn: { padding: 8, paddingHorizontal: 12, backgroundColor: colors.surfaceLight, borderRadius: 6, borderWidth: 1, borderColor: colors.border },
   headerBtnText: { color: colors.text, fontSize: 14, fontWeight: '600' },
   headerBtnPrimary: { padding: 8, paddingHorizontal: 14, backgroundColor: colors.primary, borderRadius: 6 },
   headerBtnPrimaryText: { color: colors.white, fontSize: 14, fontWeight: '600' },
+  logoutBtn: { padding: 8, paddingHorizontal: 12, borderRadius: 6, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border },
+  logoutBtnText: { color: colors.error, fontSize: 13, fontWeight: '600' },
   searchInput: {
     margin: 12, padding: 12, backgroundColor: colors.surfaceLight, borderRadius: 8,
     color: colors.text, fontSize: 16, borderWidth: 1, borderColor: colors.border,
@@ -274,10 +321,13 @@ const styles = StyleSheet.create({
   productName: { color: colors.text, fontSize: 16, fontWeight: '600' },
   productDetail: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
   productBarcode: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
-  stockBadge: { alignItems: 'center', justifyContent: 'center', paddingLeft: 12 },
+  productActions: { alignItems: 'flex-end', justifyContent: 'space-between', paddingLeft: 12 },
+  stockBadge: { alignItems: 'center', justifyContent: 'center' },
   stockText: { color: colors.success, fontSize: 22, fontWeight: 'bold' },
   stockLow: { color: colors.error },
   stockLabel: { color: colors.textMuted, fontSize: 11 },
+  deleteBtn: { marginTop: 8, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 4, backgroundColor: colors.error + '22' },
+  deleteBtnText: { color: colors.error, fontSize: 12, fontWeight: '600' },
   loadingText: { color: colors.textSecondary, textAlign: 'center', padding: 48 },
   emptyText: { color: colors.textMuted, textAlign: 'center', padding: 48 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet, TextInput,
-  Alert, ActivityIndicator, Platform, Image,
+  Alert, ActivityIndicator, Platform,
 } from 'react-native';
 import { colors } from '../theme';
 import api from '../services/api';
 import BarcodeScanner from '../components/BarcodeScanner';
+import SellItLogo from '../components/SellItLogo';
 
-export default function POSScreen({ user }) {
+export default function POSScreen({ user, onLogout }) {
   const [cart, setCart] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,7 +23,9 @@ export default function POSScreen({ user }) {
         try {
           const results = await api.getProducts({ search: searchQuery });
           setSearchResults(results);
-        } catch (_) {}
+        } catch (err) {
+          console.warn('Search failed:', err.message);
+        }
       }, 300);
       return () => clearTimeout(delay);
     }
@@ -107,6 +110,13 @@ export default function POSScreen({ user }) {
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Sign out of Sell-It?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: onLogout },
+    ]);
+  };
+
   if (scanning) {
     return <BarcodeScanner onScan={handleScan} onClose={() => setScanning(false)} />;
   }
@@ -126,7 +136,7 @@ export default function POSScreen({ user }) {
           <Text style={styles.qtyBtnText}>+</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => removeItem(item.product.id)} style={styles.removeBtn}>
-          <Text style={styles.removeBtnText}>✕</Text>
+          <Text style={styles.removeBtnText}>&#10005;</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -135,19 +145,24 @@ export default function POSScreen({ user }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerTitleGroup}>
-          <View style={styles.headerDot} />
-          <Text style={styles.headerTitle}>POS Terminal</Text>
+        <View style={styles.headerLeft}>
+          <SellItLogo size={32} />
+          <Text style={styles.headerTitle}>Sell-It</Text>
         </View>
-        <Text style={styles.headerUser}>{user?.username} ({user?.role})</Text>
+        <View style={styles.headerRight}>
+          <Text style={styles.headerUser}>{user?.username}</Text>
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+            <Text style={styles.logoutBtnText}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.actionRow}>
         <TouchableOpacity style={styles.scanBtn} onPress={() => setScanning(true)}>
-          <Text style={styles.scanBtnText}>📷 Scan Barcode</Text>
+          <Text style={styles.scanBtnText}>Scan Barcode</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.searchToggle} onPress={() => setShowSearch(!showSearch)}>
-          <Text style={styles.scanBtnText}>🔍 Search</Text>
+          <Text style={styles.scanBtnText}>Search</Text>
         </TouchableOpacity>
       </View>
 
@@ -185,6 +200,7 @@ export default function POSScreen({ user }) {
         style={styles.cartList}
         ListEmptyComponent={
           <View style={styles.emptyCart}>
+            <SellItLogo size={48} />
             <Text style={styles.emptyCartText}>Cart is empty</Text>
             <Text style={styles.emptyCartSub}>Scan or search items to add</Text>
           </View>
@@ -234,10 +250,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  headerTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.primary },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
-  headerUser: { fontSize: 14, color: colors.textSecondary },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: colors.primaryLight, letterSpacing: 0.5 },
+  headerUser: { fontSize: 13, color: colors.textSecondary },
+  logoutBtn: {
+    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6,
+    backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border,
+  },
+  logoutBtnText: { color: colors.error, fontSize: 13, fontWeight: '600' },
   actionRow: { flexDirection: 'row', padding: 12, gap: 8 },
   scanBtn: {
     flex: 1, padding: 14, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center',
@@ -276,9 +297,9 @@ const styles = StyleSheet.create({
   quantity: { color: colors.text, fontSize: 18, fontWeight: '600', minWidth: 24, textAlign: 'center' },
   removeBtn: { marginLeft: 8, padding: 6 },
   removeBtnText: { color: colors.error, fontSize: 18 },
-  emptyCart: { alignItems: 'center', padding: 48 },
+  emptyCart: { alignItems: 'center', padding: 48, gap: 8 },
   emptyCartText: { color: colors.textSecondary, fontSize: 20 },
-  emptyCartSub: { color: colors.textMuted, fontSize: 14, marginTop: 8 },
+  emptyCartSub: { color: colors.textMuted, fontSize: 14 },
   footer: {
     padding: 16, backgroundColor: colors.surface,
     borderTopWidth: 1, borderTopColor: colors.border,

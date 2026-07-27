@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, Platform, Image,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, Platform, Alert,
 } from 'react-native';
 import api from '../services/api';
 import { colors } from '../theme';
+import SellItLogo from '../components/SellItLogo';
 
-export default function AccountingScreen() {
+export default function AccountingScreen({ user, onLogout }) {
   const [entries, setEntries] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -23,8 +24,17 @@ export default function AccountingScreen() {
       ]);
       setEntries(entriesData);
       setSummary(summaryData);
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Failed to load accounting data:', err.message);
+    }
     setLoading(false);
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Sign out of Sell-It?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: onLogout },
+    ]);
   };
 
   const getTypeColor = (type) => {
@@ -68,9 +78,14 @@ export default function AccountingScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerTitleGroup}>
-          <View style={styles.headerDot} />
+        <View style={styles.headerLeft}>
+          <SellItLogo size={32} />
           <Text style={styles.headerTitle}>Accounting</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+            <Text style={styles.logoutBtnText}>Sign Out</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -107,12 +122,12 @@ export default function AccountingScreen() {
           </View>
 
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Cost of Goods Sold (Expenses)</Text>
+            <Text style={styles.summaryLabel}>Cost of Goods Sold</Text>
             <Text style={[styles.summaryValue, { color: colors.error }]}>${totalExpenses.toFixed(2)}</Text>
           </View>
 
           <View style={[styles.summaryCard, styles.summaryCardTotal]}>
-            <Text style={styles.summaryLabel}>Net Profit (Revenue - COGS)</Text>
+            <Text style={styles.summaryLabel}>Net Profit</Text>
             <Text style={[styles.summaryValue, { color: (totalRevenue - totalExpenses) >= 0 ? colors.success : colors.error }]}>
               ${(totalRevenue - totalExpenses).toFixed(2)}
             </Text>
@@ -137,11 +152,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     padding: 16, paddingTop: Platform.OS === 'web' ? 16 : 50,
-    backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
+    backgroundColor: colors.surface, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  headerTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.primary },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: colors.primaryLight },
+  logoutBtn: { padding: 8, paddingHorizontal: 12, borderRadius: 6, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border },
+  logoutBtnText: { color: colors.error, fontSize: 13, fontWeight: '600' },
   tabs: { flexDirection: 'row', paddingHorizontal: 12, marginTop: 8, gap: 8 },
   tab: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border },
   tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },

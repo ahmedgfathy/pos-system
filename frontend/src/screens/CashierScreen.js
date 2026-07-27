@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, Platform, Image,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, Platform, Alert,
 } from 'react-native';
 import api from '../services/api';
 import { colors } from '../theme';
+import SellItLogo from '../components/SellItLogo';
 
-export default function CashierScreen({ user }) {
+export default function CashierScreen({ user, onLogout }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSale, setSelectedSale] = useState(null);
@@ -18,7 +19,9 @@ export default function CashierScreen({ user }) {
     try {
       const data = await api.getSales();
       setSales(data);
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Failed to load sales:', err.message);
+    }
     setLoading(false);
   };
 
@@ -26,7 +29,16 @@ export default function CashierScreen({ user }) {
     try {
       const data = await api.getSale(saleId);
       setSelectedSale(data);
-    } catch (_) {}
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Sign out of Sell-It?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: onLogout },
+    ]);
   };
 
   const renderSale = ({ item }) => (
@@ -51,7 +63,7 @@ export default function CashierScreen({ user }) {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => setSelectedSale(null)}>
-            <Text style={styles.backBtn}>← Back</Text>
+            <Text style={styles.backBtn}>&larr; Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Sale #{selectedSale.id.slice(0, 8)}</Text>
         </View>
@@ -90,17 +102,18 @@ export default function CashierScreen({ user }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerTitleGroup}>
-          <View style={styles.headerDot} />
-          <Text style={styles.headerTitle}>Cashier</Text>
+        <View style={styles.headerLeft}>
+          <SellItLogo size={32} />
+          <Text style={styles.headerTitle}>Sales History</Text>
         </View>
-        <Text style={styles.headerUser}>{user?.username}</Text>
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.refreshBtn} onPress={loadSales}>
-          <Text style={styles.refreshBtnText}>Refresh</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.refreshBtn} onPress={loadSales}>
+            <Text style={styles.refreshBtnText}>Refresh</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+            <Text style={styles.logoutBtnText}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
@@ -127,17 +140,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  headerTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.primary },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
-  headerUser: { color: colors.textSecondary, fontSize: 14 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: colors.primaryLight },
   backBtn: { color: colors.primaryLight, fontSize: 16, marginRight: 12 },
-  actions: { padding: 12, flexDirection: 'row' },
   refreshBtn: {
-    padding: 10, paddingHorizontal: 16, backgroundColor: colors.surfaceLight, borderRadius: 8,
+    padding: 8, paddingHorizontal: 16, backgroundColor: colors.surfaceLight, borderRadius: 8,
     borderWidth: 1, borderColor: colors.border,
   },
   refreshBtnText: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  logoutBtn: { padding: 8, paddingHorizontal: 12, borderRadius: 6, backgroundColor: colors.surfaceLight, borderWidth: 1, borderColor: colors.border },
+  logoutBtnText: { color: colors.error, fontSize: 13, fontWeight: '600' },
   list: { flex: 1, paddingHorizontal: 12 },
   saleCard: {
     padding: 14, marginVertical: 4, backgroundColor: colors.surface, borderRadius: 8,

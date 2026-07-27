@@ -156,6 +156,26 @@ app.post('/api/products', (req, res) => {
   }
 });
 
+app.delete('/api/products/:id', (req, res) => {
+  try {
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    const inSale = db.prepare('SELECT COUNT(*) as count FROM sale_items WHERE product_id = ?').get(req.params.id);
+    if (inSale.count > 0) {
+      return res.status(400).json({ error: 'Cannot delete product with existing sales history' });
+    }
+
+    db.prepare('DELETE FROM inventory_transactions WHERE product_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM accounting_entries WHERE reference_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
+
+    res.json({ message: 'Product deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/products/:id', (req, res) => {
   try {
     const { name, barcode, qr_code, price, cost, stock, category } = req.body;

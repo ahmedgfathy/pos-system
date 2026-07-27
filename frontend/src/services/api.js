@@ -78,6 +78,9 @@ export const api = {
   updateProduct: (id, product) =>
     request(`/api/products/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(product) }),
 
+  deleteProduct: (id) =>
+    request(`/api/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
   // Sales
   createSale: (items, paymentMethod = 'cash') =>
     request('/api/sales', { method: 'POST', body: JSON.stringify({ items, payment_method: paymentMethod }) }),

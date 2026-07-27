@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { colors } from '../theme';
 import api from '../services/api';
+import SellItLogo from '../components/SellItLogo';
 
 export default function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState('admin');
@@ -29,11 +30,9 @@ export default function LoginScreen({ onLogin }) {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoBadgeText}>POS</Text>
-        </View>
-        <Text style={styles.title}>Point of Sale</Text>
-        <Text style={styles.subtitle}>Sign in to your terminal</Text>
+        <SellItLogo size={80} />
+        <Text style={styles.title}>Sell-It</Text>
+        <Text style={styles.subtitle}>Point of Sale System</Text>
 
         <TextInput
           style={styles.input}
@@ -66,7 +65,6 @@ export default function LoginScreen({ onLogin }) {
           )}
         </TouchableOpacity>
 
-        <Text style={styles.hint}>Demo: admin/admin123 or cashier/cashier123</Text>
       </View>
     </View>
   );
@@ -90,26 +88,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  logoBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  logoBadgeText: {
-    color: colors.white,
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
   title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 4,
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.primaryLight,
+    marginTop: 12,
+    letterSpacing: 1,
   },
   subtitle: {
     fontSize: 14,
@@ -148,9 +132,5 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontSize: 14,
   },
-  hint: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 20,
-  },
+
 });

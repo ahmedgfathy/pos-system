@@ -15,7 +15,7 @@ import CashierScreen from './src/screens/CashierScreen';
 
 const Tab = createBottomTabNavigator();
 
-function MainTabs({ user }) {
+function MainTabs({ user, onLogout }) {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -38,36 +38,40 @@ function MainTabs({ user }) {
           tabBarIcon: ({ color, size }) => <Feather name="shopping-cart" size={size} color={color} />,
         }}
       >
-        {() => <POSScreen user={user} />}
+        {() => <POSScreen user={user} onLogout={onLogout} />}
       </Tab.Screen>
       <Tab.Screen
         name="Inventory"
-        component={InventoryScreen}
         options={{
           tabBarIcon: ({ color, size }) => <Feather name="package" size={size} color={color} />,
         }}
-      />
+      >
+        {() => <InventoryScreen user={user} onLogout={onLogout} />}
+      </Tab.Screen>
       <Tab.Screen
         name="Cashier"
         options={{
           tabBarIcon: ({ color, size }) => <Feather name="user" size={size} color={color} />,
         }}
       >
-        {() => <CashierScreen user={user} />}
+        {() => <CashierScreen user={user} onLogout={onLogout} />}
       </Tab.Screen>
       <Tab.Screen
         name="Accounting"
-        component={AccountingScreen}
         options={{
           tabBarIcon: ({ color, size }) => <Feather name="bar-chart-2" size={size} color={color} />,
         }}
-      />
+      >
+        {() => <AccountingScreen user={user} onLogout={onLogout} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
 
 export default function App() {
   const [user, setUser] = useState(null);
+
+  const handleLogout = () => setUser(null);
 
   if (!user) {
     return (
@@ -82,7 +86,7 @@ export default function App() {
     <SafeAreaProvider>
       <NavigationContainer>
         <StatusBar style="light" />
-        <MainTabs user={user} />
+        <MainTabs user={user} onLogout={handleLogout} />
       </NavigationContainer>
     </SafeAreaProvider>
   );
