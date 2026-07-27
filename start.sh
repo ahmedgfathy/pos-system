@@ -3,6 +3,7 @@ trap 'kill $(jobs -p) 2>/dev/null' SIGINT SIGTERM
 
 echo "Starting Sell-It backend on http://localhost:3001"
 cd "$(dirname "$0")"
+node backend/src/seed.js >/dev/null
 node backend/src/server.js &
 BACKEND_PID=$!
 

@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
-const db = require('./db');
+const { connectToMongo } = require('./db');
+const { seedDatabase } = require('./seed');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,34 +28,37 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
   try {
+    const db = await connectToMongo();
     const { search, category } = req.query;
-    let query = 'SELECT * FROM products WHERE 1=1';
-    const params = [];
+    const filter = {};
 
     if (search) {
-      query += ' AND (name LIKE ? OR barcode LIKE ? OR qr_code LIKE ?)';
-      const s = `%${search}%`;
-      params.push(s, s, s);
-    }
-    if (category) {
-      query += ' AND category = ?';
-      params.push(category);
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { barcode: { $regex: search, $options: 'i' } },
+        { qr_code: { $regex: search, $options: 'i' } },
+      ];
     }
 
-    query += ' ORDER BY name';
-    const products = db.prepare(query).all(...params);
+    if (category) {
+      filter.category = category;
+    }
+
+    const products = await db.collection('products').find(filter).sort({ name: 1 }).toArray();
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/products/lookup/:code', (req, res) => {
+app.get('/api/products/lookup/:code', async (req, res) => {
   try {
-    const product = db.prepare('SELECT * FROM products WHERE barcode = ? OR qr_code = ?')
-      .get(req.params.code, req.params.code);
+    const db = await connectToMongo();
+    const product = await db.collection('products').findOne({
+      $or: [{ barcode: req.params.code }, { qr_code: req.params.code }],
+    });
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);
   } catch (err) {
@@ -64,8 +68,11 @@ app.get('/api/products/lookup/:code', (req, res) => {
 
 app.get('/api/products/auto-lookup/:code', async (req, res) => {
   try {
+    const db = await connectToMongo();
     const code = req.params.code;
-    const existing = db.prepare('SELECT * FROM products WHERE barcode = ? OR qr_code = ?').get(code, code);
+    const existing = await db.collection('products').findOne({
+      $or: [{ barcode: code }, { qr_code: code }],
+    });
     if (existing) {
       return res.json({ foundInDb: true, product: existing });
     }
@@ -102,7 +109,7 @@ app.get('/api/products/auto-lookup/:code', async (req, res) => {
     const categoryName = rawCategory
       .split(',')[0]
       .replace(/[_\-]/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase())
+      .replace(/\b\w/g, (c) => c.toUpperCase())
       .trim()
       .slice(0, 30);
 
@@ -115,8 +122,8 @@ app.get('/api/products/auto-lookup/:code', async (req, res) => {
         name: onlineData.name,
         barcode: code,
         category: categoryName || 'General',
-        price: price,
-        cost: cost,
+        price,
+        cost,
         stock: 20,
         image: onlineData.image,
         description: onlineData.description,
@@ -127,9 +134,10 @@ app.get('/api/products/auto-lookup/:code', async (req, res) => {
   }
 });
 
-app.get('/api/products/:id', (req, res) => {
+app.get('/api/products/:id', async (req, res) => {
   try {
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+    const db = await connectToMongo();
+    const product = await db.collection('products').findOne({ id: req.params.id });
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);
   } catch (err) {
@@ -137,38 +145,49 @@ app.get('/api/products/:id', (req, res) => {
   }
 });
 
-app.post('/api/products', (req, res) => {
+app.post('/api/products', async (req, res) => {
   try {
     const { name, barcode, qr_code, price, cost, stock, category } = req.body;
     if (!name || price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
     }
-    const id = uuidv4();
-    db.prepare(`
-      INSERT INTO products (id, name, barcode, qr_code, price, cost, stock, category)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, barcode || null, qr_code || null, price, cost || 0, stock || 0, category || null);
 
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    const db = await connectToMongo();
+    const id = uuidv4();
+    const product = {
+      id,
+      name,
+      barcode: barcode || null,
+      qr_code: qr_code || null,
+      price,
+      cost: cost || 0,
+      stock: stock || 0,
+      category: category || null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    await db.collection('products').insertOne(product);
     res.status(201).json(product);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', async (req, res) => {
   try {
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+    const db = await connectToMongo();
+    const product = await db.collection('products').findOne({ id: req.params.id });
     if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    const inSale = db.prepare('SELECT COUNT(*) as count FROM sale_items WHERE product_id = ?').get(req.params.id);
-    if (inSale.count > 0) {
+    const saleCount = await db.collection('sales').countDocuments({ 'items.product_id': req.params.id });
+    if (saleCount > 0) {
       return res.status(400).json({ error: 'Cannot delete product with existing sales history' });
     }
 
-    db.prepare('DELETE FROM inventory_transactions WHERE product_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM accounting_entries WHERE reference_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
+    await db.collection('inventory_transactions').deleteMany({ product_id: req.params.id });
+    await db.collection('accounting_entries').deleteMany({ reference_id: req.params.id });
+    await db.collection('products').deleteOne({ id: req.params.id });
 
     res.json({ message: 'Product deleted' });
   } catch (err) {
@@ -176,35 +195,39 @@ app.delete('/api/products/:id', (req, res) => {
   }
 });
 
-app.put('/api/products/:id', (req, res) => {
+app.put('/api/products/:id', async (req, res) => {
   try {
     const { name, barcode, qr_code, price, cost, stock, category } = req.body;
     if (!name || price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
     }
-    db.prepare(`
-      UPDATE products SET name=?, barcode=?, qr_code=?, price=?, cost=?, stock=?, category=?, updated_at=CURRENT_TIMESTAMP
-      WHERE id=?
-    `).run(
+
+    const db = await connectToMongo();
+    const updatedProduct = {
       name,
-      barcode || null,
-      qr_code || null,
+      barcode: barcode || null,
+      qr_code: qr_code || null,
       price,
-      cost ?? 0,
-      stock ?? 0,
-      category || null,
-      req.params.id
+      cost: cost ?? 0,
+      stock: stock ?? 0,
+      category: category || null,
+      updated_at: new Date(),
+    };
+
+    const result = await db.collection('products').findOneAndUpdate(
+      { id: req.params.id },
+      { $set: updatedProduct },
+      { returnDocument: 'after' }
     );
 
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json(product);
+    if (!result.value) return res.status(404).json({ error: 'Product not found' });
+    res.json(result.value);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/sales', (req, res) => {
+app.post('/api/sales', async (req, res) => {
   try {
     const { items, payment_method = 'cash' } = req.body;
 
@@ -212,164 +235,189 @@ app.post('/api/sales', (req, res) => {
       return res.status(400).json({ error: 'No items in sale' });
     }
 
+    const db = await connectToMongo();
     const saleId = uuidv4();
     let total = 0;
+    const saleItems = [];
 
-    const saleItems = items.map(item => {
-      const product = db.prepare('SELECT * FROM products WHERE id = ? OR barcode = ?').get(item.productId, item.productId);
+    for (const item of items) {
+      const product = await db.collection('products').findOne({ $or: [{ id: item.productId }, { barcode: item.productId }] });
       if (!product) throw new Error(`Product not found: ${item.productId}`);
       if (product.stock < item.quantity) throw new Error(`Insufficient stock: ${product.name} (available: ${product.stock})`);
 
       const subtotal = product.price * item.quantity;
       total += subtotal;
-      return { product, quantity: item.quantity, price: product.price, subtotal };
-    });
+      saleItems.push({
+        product_id: product.id,
+        product_name: product.name,
+        barcode: product.barcode,
+        quantity: item.quantity,
+        price: product.price,
+        subtotal,
+      });
+    }
 
-    const doSale = db.transaction(() => {
-      db.prepare('INSERT INTO sales (id, total, payment_method) VALUES (?, ?, ?)')
-        .run(saleId, total, payment_method);
+    for (const saleItem of saleItems) {
+      await db.collection('products').updateOne({ id: saleItem.product_id }, { $inc: { stock: -saleItem.quantity }, $set: { updated_at: new Date() } });
+      await db.collection('inventory_transactions').insertOne({
+        product_id: saleItem.product_id,
+        product_name: saleItem.product_name,
+        type: 'out',
+        quantity: saleItem.quantity,
+        notes: `Sale #${saleId.slice(0, 8)}`,
+        created_at: new Date(),
+      });
+      await db.collection('accounting_entries').insertOne({
+        type: 'revenue',
+        description: `Sale Revenue: ${saleItem.product_name} x${saleItem.quantity}`,
+        amount: saleItem.subtotal,
+        reference_id: saleId,
+        reference_type: 'sale',
+        created_at: new Date(),
+      });
 
-      for (const si of saleItems) {
-        db.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, price, subtotal) VALUES (?, ?, ?, ?, ?)')
-          .run(saleId, si.product.id, si.quantity, si.price, si.subtotal);
-
-        db.prepare('UPDATE products SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run(si.quantity, si.product.id);
-
-        db.prepare('INSERT INTO inventory_transactions (product_id, type, quantity, notes) VALUES (?, ?, ?, ?)')
-          .run(si.product.id, 'out', si.quantity, `Sale #${saleId.slice(0, 8)}`);
-
-        db.prepare(`INSERT INTO accounting_entries (type, description, amount, reference_id, reference_type)
-          VALUES ('revenue', ?, ?, ?, 'sale')`)
-          .run(`Sale Revenue: ${si.product.name} x${si.quantity}`, si.subtotal, saleId);
-
-        if (si.product.cost > 0) {
-          db.prepare(`INSERT INTO accounting_entries (type, description, amount, reference_id, reference_type)
-            VALUES ('expense', ?, ?, ?, 'cogs')`)
-            .run(`Cost of Goods: ${si.product.name} x${si.quantity}`, si.product.cost * si.quantity, saleId);
-        }
+      const product = await db.collection('products').findOne({ id: saleItem.product_id });
+      if (product && product.cost > 0) {
+        await db.collection('accounting_entries').insertOne({
+          type: 'expense',
+          description: `Cost of Goods: ${saleItem.product_name} x${saleItem.quantity}`,
+          amount: product.cost * saleItem.quantity,
+          reference_id: saleId,
+          reference_type: 'cogs',
+          created_at: new Date(),
+        });
       }
-    });
+    }
 
-    doSale();
+    const sale = {
+      id: saleId,
+      total,
+      payment_method,
+      status: 'completed',
+      created_at: new Date(),
+      items: saleItems,
+    };
 
-    const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId);
-    const items_out = db.prepare(`
-      SELECT si.*, p.name as product_name, p.barcode
-      FROM sale_items si JOIN products p ON si.product_id = p.id
-      WHERE si.sale_id = ?
-    `).all(saleId);
-
-    res.status(201).json({ ...sale, items: items_out });
+    await db.collection('sales').insertOne(sale);
+    res.status(201).json(sale);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.get('/api/sales', (req, res) => {
+app.get('/api/sales', async (req, res) => {
   try {
-    const sales = db.prepare('SELECT * FROM sales ORDER BY created_at DESC LIMIT 100').all();
+    const db = await connectToMongo();
+    const sales = await db.collection('sales').find({}).sort({ created_at: -1 }).limit(100).toArray();
     res.json(sales);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/sales/:id', (req, res) => {
+app.get('/api/sales/:id', async (req, res) => {
   try {
-    const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(req.params.id);
+    const db = await connectToMongo();
+    const sale = await db.collection('sales').findOne({ id: req.params.id });
     if (!sale) return res.status(404).json({ error: 'Sale not found' });
-
-    const items = db.prepare(`
-      SELECT si.*, p.name as product_name, p.barcode
-      FROM sale_items si JOIN products p ON si.product_id = p.id
-      WHERE si.sale_id = ?
-    `).all(req.params.id);
-
-    res.json({ ...sale, items });
+    res.json(sale);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/inventory/transactions', (req, res) => {
+app.get('/api/inventory/transactions', async (req, res) => {
   try {
-    const transactions = db.prepare(`
-      SELECT it.*, p.name as product_name
-      FROM inventory_transactions it JOIN products p ON it.product_id = p.id
-      ORDER BY it.created_at DESC LIMIT 100
-    `).all();
+    const db = await connectToMongo();
+    const transactions = await db.collection('inventory_transactions').find({}).sort({ created_at: -1 }).limit(100).toArray();
     res.json(transactions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/inventory/adjust', (req, res) => {
+app.post('/api/inventory/adjust', async (req, res) => {
   try {
     const { productId, type, quantity, notes } = req.body;
+    const db = await connectToMongo();
 
-    const product = db.prepare('SELECT * FROM products WHERE id = ? OR barcode = ?').get(productId, productId);
+    const product = await db.collection('products').findOne({ $or: [{ id: productId }, { barcode: productId }] });
     if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    const adjust = db.transaction(() => {
-      if (type === 'in') {
-        db.prepare('UPDATE products SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run(quantity, product.id);
-      } else {
-        if (product.stock < quantity) throw new Error(`Insufficient stock to remove ${quantity}`);
-        db.prepare('UPDATE products SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-          .run(quantity, product.id);
-      }
+    if (type !== 'in' && type !== 'out') {
+      return res.status(400).json({ error: 'Invalid adjustment type' });
+    }
 
-      db.prepare('INSERT INTO inventory_transactions (product_id, type, quantity, notes) VALUES (?, ?, ?, ?)')
-        .run(product.id, type, quantity, notes || `Adjustment: ${type === 'in' ? '+' : '-'}${quantity}`);
+    if (type === 'out' && product.stock < quantity) {
+      throw new Error(`Insufficient stock to remove ${quantity}`);
+    }
 
-      if (type === 'in') {
-        db.prepare(`INSERT INTO accounting_entries (type, description, amount, reference_id, reference_type)
-          VALUES ('asset', ?, ?, ?, 'inventory')`)
-          .run(`Stock added: ${product.name} x${quantity}`, quantity * product.cost, product.id);
-      }
+    const delta = type === 'in' ? quantity : -quantity;
+    const updated = await db.collection('products').findOneAndUpdate(
+      { id: product.id },
+      { $inc: { stock: delta }, $set: { updated_at: new Date() } },
+      { returnDocument: 'after' }
+    );
+
+    await db.collection('inventory_transactions').insertOne({
+      product_id: product.id,
+      product_name: product.name,
+      type,
+      quantity,
+      notes: notes || `Adjustment: ${type === 'in' ? '+' : '-'}${quantity}`,
+      created_at: new Date(),
     });
 
-    adjust();
+    if (type === 'in') {
+      await db.collection('accounting_entries').insertOne({
+        type: 'asset',
+        description: `Stock added: ${product.name} x${quantity}`,
+        amount: quantity * product.cost,
+        reference_id: product.id,
+        reference_type: 'inventory',
+        created_at: new Date(),
+      });
+    }
 
-    const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(product.id);
-    res.json(updated);
+    res.json(updated.value);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.get('/api/accounting/entries', (req, res) => {
+app.get('/api/accounting/entries', async (req, res) => {
   try {
-    const entries = db.prepare('SELECT * FROM accounting_entries ORDER BY created_at DESC LIMIT 100').all();
+    const db = await connectToMongo();
+    const entries = await db.collection('accounting_entries').find({}).sort({ created_at: -1 }).limit(100).toArray();
     res.json(entries);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/accounting/summary', (req, res) => {
+app.get('/api/accounting/summary', async (req, res) => {
   try {
-    const byType = db.prepare(`
-      SELECT type, SUM(amount) as total, COUNT(*) as count
-      FROM accounting_entries GROUP BY type
-    `).all();
+    const db = await connectToMongo();
+    const byType = await db.collection('accounting_entries').aggregate([
+      { $group: { _id: '$type', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      { $project: { _id: 0, type: '$_id', total: 1, count: 1 } },
+    ]).toArray();
 
-    const totalRevenue = db.prepare("SELECT COALESCE(SUM(total), 0) as total FROM sales").get();
+    const salesSummary = await db.collection('sales').aggregate([
+      { $group: { _id: null, total: { $sum: '$total' } } },
+    ]).toArray();
 
-    res.json({ byType, totalSales: totalRevenue.total });
+    res.json({ byType, totalSales: salesSummary[0]?.total || 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = db.prepare('SELECT id, username, role FROM users WHERE username = ? AND password = ?')
-      .get(username, password);
+    const db = await connectToMongo();
+    const user = await db.collection('users').findOne({ username, password }, { projection: { _id: 0, id: 1, username: 1, role: 1 } });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
     res.json(user);
   } catch (err) {
@@ -377,15 +425,18 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-app.get('/api/categories', (req, res) => {
+app.get('/api/categories', async (req, res) => {
   try {
-    const categories = db.prepare(
-      'SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category'
-    ).all();
-    res.json(categories.map(c => c.category));
+    const db = await connectToMongo();
+    const categories = await db.collection('products').distinct('category', { category: { $ne: null } });
+    res.json(categories.sort());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+seedDatabase().catch((err) => {
+  console.error('Seed initialization failed:', err.message);
 });
 
 app.listen(PORT, '0.0.0.0', () => {

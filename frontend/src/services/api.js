@@ -1,21 +1,22 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+const { resolveApiUrl } = require('./apiConfig');
 
 // The web build is served behind nginx, so relative /api URLs are correct there.
 // Native apps have no browser origin: derive the development API host from the
 // Metro/Expo URL, while still allowing production and tunnel builds to override it.
 function getApiUrl() {
-  const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (configuredUrl) return configuredUrl.replace(/\/$/, '');
-  if (Platform.OS === 'web') return '';
-
   const expoHost =
     Constants.expoConfig?.hostUri ||
     Constants.manifest2?.extra?.expoClient?.hostUri ||
     Constants.manifest?.debuggerHost;
-  const hostname = expoHost?.split(':')[0];
 
-  return hostname ? `http://${hostname}:3001` : '';
+  return resolveApiUrl({
+    configuredUrl: process.env.EXPO_PUBLIC_API_URL,
+    platform: Platform.OS,
+    expoHost,
+    windowOrigin: typeof window !== 'undefined' ? window.location.origin : undefined,
+  });
 }
 
 export const API_URL = getApiUrl();
