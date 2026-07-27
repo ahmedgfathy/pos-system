@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "POS System",
+    "slug": "pos-system",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#1a73e8"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.possystem.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera is used to scan product barcodes and QR codes"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1a73e8"
+      },
+      "package": "com.possystem.app",
+      "permissions": ["CAMERA"]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow POS to access your camera to scan barcodes."
+        }
+      ]
+    ]
+  }
+}
