@@ -4,11 +4,13 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY . .
 
-RUN npx expo export --platform web
+# The browser uses the exposed backend on localhost during local Docker runs
+# and relative /api URLs when deployed behind nginx.
+RUN EXPO_PUBLIC_API_URL= npx expo export --platform web
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html

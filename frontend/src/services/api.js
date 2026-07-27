@@ -83,8 +83,8 @@ export const api = {
     request(`/api/products/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // Sales
-  createSale: (items, paymentMethod = 'cash') =>
-    request('/api/sales', { method: 'POST', body: JSON.stringify({ items, payment_method: paymentMethod }) }),
+  createSale: (items, paymentMethod = 'cash', cashierId = null) =>
+    request('/api/sales', { method: 'POST', body: JSON.stringify({ items, payment_method: paymentMethod, cashier_id: cashierId }) }),
 
   getSales: () =>
     request('/api/sales'),
@@ -109,6 +109,15 @@ export const api = {
   // Categories
   getCategories: () =>
     request('/api/categories'),
+
+  getUnits: () =>
+    request('/api/units'),
+
+  getSuppliers: () =>
+    request('/api/suppliers'),
+
+  getDatabaseSummary: () =>
+    request('/api/database/summary'),
 };
 
 export default api;

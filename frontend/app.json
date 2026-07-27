@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sell-It",
     "slug": "sell-it",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -21,7 +21,11 @@
         "backgroundColor": "#133593"
       },
       "package": "com.sellit.app",
-      "permissions": ["CAMERA"]
+      "versionCode": 2,
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -32,6 +36,14 @@
         "expo-camera",
         {
           "cameraPermission": "Allow Sell-It to access your camera to scan barcodes."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
     ]

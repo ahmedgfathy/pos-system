@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet, TextInput,
-  Alert, Modal, Platform,
+  Alert, Modal, Platform, ScrollView,
 } from 'react-native';
 import api from '../services/api';
 import { colors } from '../theme';
 import BarcodeScanner from '../components/BarcodeScanner';
 import SellItLogo from '../components/SellItLogo';
+
+const emptyProductForm = () => ({
+  sku: '', name: '', description: '', barcode: '', price: '', cost: '',
+  stock: '', minimum_stock: '', category: '', unit: 'pc', brand: '',
+  location: '', tax_rate: '14',
+});
 
 export default function InventoryScreen({ user, onLogout }) {
   const [products, setProducts] = useState([]);
@@ -16,7 +22,7 @@ export default function InventoryScreen({ user, onLogout }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [form, setForm] = useState({ name: '', barcode: '', price: '', cost: '', stock: '', category: '' });
+  const [form, setForm] = useState(emptyProductForm);
   const [adjustQty, setAdjustQty] = useState('1');
   const [autoFetchedNotice, setAutoFetchedNotice] = useState('');
 
@@ -51,18 +57,23 @@ export default function InventoryScreen({ user, onLogout }) {
       } else {
         const p = res.product || {};
         setForm({
+          ...emptyProductForm(),
+          sku: p.sku || '',
           name: p.name || '',
+          description: p.description || '',
           barcode: code,
           price: p.price ? String(p.price) : '',
           cost: p.cost ? String(p.cost) : '',
           stock: p.stock ? String(p.stock) : '10',
           category: p.category || 'General',
+          unit: p.unit || 'pc',
+          brand: p.brand || '',
         });
         setAutoFetchedNotice(`Auto-fetched: "${p.name}" (${p.category})`);
         setShowAddModal(true);
       }
     } catch (err) {
-      setForm({ name: '', barcode: code, price: '', cost: '', stock: '', category: '' });
+      setForm({ ...emptyProductForm(), barcode: code });
       setAutoFetchedNotice('');
       setShowAddModal(true);
     }
@@ -75,15 +86,22 @@ export default function InventoryScreen({ user, onLogout }) {
     }
     try {
       await api.createProduct({
+        sku: form.sku || undefined,
         name: form.name,
+        description: form.description,
         barcode: form.barcode || undefined,
         price: parseFloat(form.price),
         cost: parseFloat(form.cost) || 0,
         stock: parseInt(form.stock) || 0,
+        minimum_stock: parseInt(form.minimum_stock) || 0,
         category: form.category || undefined,
+        unit: form.unit || 'pc',
+        brand: form.brand,
+        location: form.location,
+        tax_rate: parseFloat(form.tax_rate) || 0,
       });
       setShowAddModal(false);
-      setForm({ name: '', barcode: '', price: '', cost: '', stock: '', category: '' });
+      setForm(emptyProductForm());
       setAutoFetchedNotice('');
       loadProducts();
     } catch (err) {
@@ -152,15 +170,18 @@ export default function InventoryScreen({ user, onLogout }) {
     >
       <View style={styles.productInfo}>
         <Text style={styles.productName}>{item.name}</Text>
+        <Text style={styles.productDescription} numberOfLines={2}>{item.description || 'No description'}</Text>
         <Text style={styles.productDetail}>
-          ${item.price.toFixed(2)} | Cost: ${item.cost.toFixed(2)} | {item.category || 'No category'}
+          EGP {item.price.toFixed(2)} | Cost: EGP {item.cost.toFixed(2)} | {item.category || 'No category'}
         </Text>
-        <Text style={styles.productBarcode}>Barcode: {item.barcode || 'N/A'}</Text>
+        <Text style={styles.productBarcode}>
+          SKU: {item.sku || 'N/A'} | Barcode: {item.barcode || 'N/A'} | Unit: {item.unit || 'pc'}
+        </Text>
       </View>
       <View style={styles.productActions}>
         <View style={styles.stockBadge}>
           <Text style={[styles.stockText, item.stock < 10 && styles.stockLow]}>
-            {item.stock}
+            {item.stock} {item.unit || 'pc'}
           </Text>
           <Text style={styles.stockLabel}>in stock</Text>
         </View>
@@ -189,7 +210,7 @@ export default function InventoryScreen({ user, onLogout }) {
           </TouchableOpacity>
           {user?.role === 'admin' && (
             <TouchableOpacity onPress={() => {
-              setForm({ name: '', barcode: '', price: '', cost: '', stock: '', category: '' });
+              setForm(emptyProductForm());
               setAutoFetchedNotice('');
               setShowAddModal(true);
             }} style={styles.headerBtnPrimary}>
@@ -226,14 +247,18 @@ export default function InventoryScreen({ user, onLogout }) {
 
       <Modal visible={showAddModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
+          <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
             <Text style={styles.modalTitle}>Add Product</Text>
             {autoFetchedNotice ? (
               <Text style={styles.autoNotice}>{autoFetchedNotice}</Text>
             ) : null}
 
+            <TextInput style={styles.modalInput} placeholder="SKU (auto-generated if empty)" placeholderTextColor={colors.textMuted}
+              value={form.sku} onChangeText={v => setForm({...form, sku: v})} />
             <TextInput style={styles.modalInput} placeholder="Product Name *" placeholderTextColor={colors.textMuted}
               value={form.name} onChangeText={v => setForm({...form, name: v})} />
+            <TextInput style={[styles.modalInput, styles.descriptionInput]} placeholder="Description" placeholderTextColor={colors.textMuted}
+              multiline value={form.description} onChangeText={v => setForm({...form, description: v})} />
             <TextInput style={styles.modalInput} placeholder="Barcode" placeholderTextColor={colors.textMuted}
               value={form.barcode} onChangeText={v => setForm({...form, barcode: v})} />
             <TextInput style={styles.modalInput} placeholder="Price *" placeholderTextColor={colors.textMuted} keyboardType="decimal-pad"
@@ -242,8 +267,18 @@ export default function InventoryScreen({ user, onLogout }) {
               value={form.cost} onChangeText={v => setForm({...form, cost: v})} />
             <TextInput style={styles.modalInput} placeholder="Stock" placeholderTextColor={colors.textMuted} keyboardType="number-pad"
               value={form.stock} onChangeText={v => setForm({...form, stock: v})} />
+            <TextInput style={styles.modalInput} placeholder="Minimum Stock" placeholderTextColor={colors.textMuted} keyboardType="number-pad"
+              value={form.minimum_stock} onChangeText={v => setForm({...form, minimum_stock: v})} />
             <TextInput style={styles.modalInput} placeholder="Category" placeholderTextColor={colors.textMuted}
               value={form.category} onChangeText={v => setForm({...form, category: v})} />
+            <TextInput style={styles.modalInput} placeholder="Unit (pc, kg, L, pack, box)" placeholderTextColor={colors.textMuted}
+              value={form.unit} onChangeText={v => setForm({...form, unit: v})} />
+            <TextInput style={styles.modalInput} placeholder="Brand" placeholderTextColor={colors.textMuted}
+              value={form.brand} onChangeText={v => setForm({...form, brand: v})} />
+            <TextInput style={styles.modalInput} placeholder="Shelf / Location" placeholderTextColor={colors.textMuted}
+              value={form.location} onChangeText={v => setForm({...form, location: v})} />
+            <TextInput style={styles.modalInput} placeholder="Tax Rate %" placeholderTextColor={colors.textMuted} keyboardType="decimal-pad"
+              value={form.tax_rate} onChangeText={v => setForm({...form, tax_rate: v})} />
 
             <View style={styles.modalActions}>
               <TouchableOpacity onPress={handleAddProduct} style={styles.modalBtnPrimary}>
@@ -253,7 +288,7 @@ export default function InventoryScreen({ user, onLogout }) {
                 <Text style={styles.modalBtnTextSecondary}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -263,7 +298,11 @@ export default function InventoryScreen({ user, onLogout }) {
             <Text style={styles.modalTitle}>
               {selectedProduct?.name}
             </Text>
-            <Text style={styles.modalSub}>Current stock: {selectedProduct?.stock}</Text>
+            <Text style={styles.modalSub}>
+              {selectedProduct?.description || 'No description'}{'\n'}
+              SKU: {selectedProduct?.sku || 'N/A'} · Unit: {selectedProduct?.unit || 'pc'} · Location: {selectedProduct?.location || 'N/A'}{'\n'}
+              Current stock: {selectedProduct?.stock} {selectedProduct?.unit || 'pc'} · Minimum: {selectedProduct?.minimum_stock || 0}
+            </Text>
 
             <TextInput
               style={styles.modalInput}
@@ -320,6 +359,7 @@ const styles = StyleSheet.create({
   productInfo: { flex: 1 },
   productName: { color: colors.text, fontSize: 16, fontWeight: '600' },
   productDetail: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  productDescription: { color: colors.text, fontSize: 13, marginTop: 4 },
   productBarcode: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
   productActions: { alignItems: 'flex-end', justifyContent: 'space-between', paddingLeft: 12 },
   stockBadge: { alignItems: 'center', justifyContent: 'center' },
@@ -331,7 +371,8 @@ const styles = StyleSheet.create({
   loadingText: { color: colors.textSecondary, textAlign: 'center', padding: 48 },
   emptyText: { color: colors.textMuted, textAlign: 'center', padding: 48 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
-  modal: { backgroundColor: colors.surface, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: colors.border },
+  modal: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, maxHeight: '92%' },
+  modalContent: { padding: 24 },
   modalTitle: { color: colors.text, fontSize: 20, fontWeight: 'bold', marginBottom: 4 },
   autoNotice: {
     color: colors.primaryLight, fontSize: 13, fontWeight: '600',
@@ -343,6 +384,7 @@ const styles = StyleSheet.create({
     padding: 12, marginVertical: 6, backgroundColor: colors.surfaceLight, borderRadius: 8,
     color: colors.text, fontSize: 16, borderWidth: 1, borderColor: colors.border,
   },
+  descriptionInput: { minHeight: 72, textAlignVertical: 'top' },
   modalActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   modalBtnPrimary: { flex: 1, padding: 12, backgroundColor: colors.primary, borderRadius: 8, alignItems: 'center' },
   modalBtnSecondary: { padding: 12 },

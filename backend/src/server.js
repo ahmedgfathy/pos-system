@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const bcrypt = require('bcryptjs');
 const { connectToMongo } = require('./db');
 const { seedDatabase } = require('./seed');
 
@@ -28,6 +29,24 @@ app.get('/', (req, res) => {
   });
 });
 
+app.get('/api/health', async (req, res) => {
+  try {
+    const db = await connectToMongo();
+    await db.admin().ping();
+    res.json({
+      status: 'ok',
+      database: 'mongodb',
+      databaseName: db.databaseName,
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'error',
+      database: 'mongodb',
+      error: err.message,
+    });
+  }
+});
+
 app.get('/api/products', async (req, res) => {
   try {
     const db = await connectToMongo();
@@ -37,6 +56,9 @@ app.get('/api/products', async (req, res) => {
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
+        { sku: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { brand: { $regex: search, $options: 'i' } },
         { barcode: { $regex: search, $options: 'i' } },
         { qr_code: { $regex: search, $options: 'i' } },
       ];
@@ -145,10 +167,69 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
+function normalizeProduct(body, current = {}) {
+  const number = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  return {
+    sku: String(body.sku || current.sku || `SKU-${Date.now()}`).trim(),
+    name: String(body.name || current.name || '').trim(),
+    description: String(body.description ?? current.description ?? '').trim(),
+    barcode: body.barcode?.trim() || null,
+    qr_code: body.qr_code?.trim() || current.qr_code || null,
+    category_id: body.category_id || current.category_id || null,
+    category: body.category?.trim() || current.category || null,
+    unit_id: body.unit_id || current.unit_id || 'unit-piece',
+    unit: body.unit?.trim() || current.unit || 'pc',
+    price: number(body.price, current.price),
+    cost: number(body.cost, current.cost),
+    tax_rate: number(body.tax_rate, current.tax_rate ?? 0),
+    stock: number(body.stock, current.stock),
+    minimum_stock: number(body.minimum_stock, current.minimum_stock ?? 0),
+    maximum_stock: body.maximum_stock === '' || body.maximum_stock == null
+      ? (current.maximum_stock ?? null)
+      : number(body.maximum_stock),
+    supplier_id: body.supplier_id || current.supplier_id || null,
+    brand: String(body.brand ?? current.brand ?? '').trim(),
+    location: String(body.location ?? current.location ?? '').trim(),
+    active: body.active ?? current.active ?? true,
+  };
+}
+
+async function hydrateProductReferences(db, values) {
+  if (values.category) {
+    const category = await db.collection('categories').findOneAndUpdate(
+      { name: values.category },
+      {
+        $setOnInsert: {
+          id: uuidv4(),
+          name: values.category,
+          description: '',
+          active: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+    values.category_id = category.id;
+  }
+
+  const unit = await db.collection('units').findOne({ symbol: values.unit, active: true })
+    || await db.collection('units').findOne({ symbol: 'pc', active: true });
+  if (unit) {
+    values.unit_id = unit.id;
+    values.unit = unit.symbol;
+  }
+  return values;
+}
+
 app.post('/api/products', async (req, res) => {
   try {
-    const { name, barcode, qr_code, price, cost, stock, category } = req.body;
-    if (!name || price === undefined) {
+    const values = normalizeProduct(req.body);
+    if (!values.name || req.body.price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
     }
 
@@ -156,13 +237,7 @@ app.post('/api/products', async (req, res) => {
     const id = uuidv4();
     const product = {
       id,
-      name,
-      barcode: barcode || null,
-      qr_code: qr_code || null,
-      price,
-      cost: cost || 0,
-      stock: stock || 0,
-      category: category || null,
+      ...values,
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -197,20 +272,17 @@ app.delete('/api/products/:id', async (req, res) => {
 
 app.put('/api/products/:id', async (req, res) => {
   try {
-    const { name, barcode, qr_code, price, cost, stock, category } = req.body;
-    if (!name || price === undefined) {
+    const db = await connectToMongo();
+    await hydrateProductReferences(db, values);
+    const current = await db.collection('products').findOne({ id: req.params.id });
+    if (!current) return res.status(404).json({ error: 'Product not found' });
+    const values = normalizeProduct(req.body, current);
+    await hydrateProductReferences(db, values);
+    if (!values.name || values.price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
     }
-
-    const db = await connectToMongo();
     const updatedProduct = {
-      name,
-      barcode: barcode || null,
-      qr_code: qr_code || null,
-      price,
-      cost: cost ?? 0,
-      stock: stock ?? 0,
-      category: category || null,
+      ...values,
       updated_at: new Date(),
     };
 
@@ -220,8 +292,8 @@ app.put('/api/products/:id', async (req, res) => {
       { returnDocument: 'after' }
     );
 
-    if (!result.value) return res.status(404).json({ error: 'Product not found' });
-    res.json(result.value);
+    if (!result) return res.status(404).json({ error: 'Product not found' });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -237,7 +309,8 @@ app.post('/api/sales', async (req, res) => {
 
     const db = await connectToMongo();
     const saleId = uuidv4();
-    let total = 0;
+    let subtotal = 0;
+    let taxTotal = 0;
     const saleItems = [];
 
     for (const item of items) {
@@ -245,15 +318,22 @@ app.post('/api/sales', async (req, res) => {
       if (!product) throw new Error(`Product not found: ${item.productId}`);
       if (product.stock < item.quantity) throw new Error(`Insufficient stock: ${product.name} (available: ${product.stock})`);
 
-      const subtotal = product.price * item.quantity;
-      total += subtotal;
+      const lineSubtotal = product.price * item.quantity;
+      const lineTax = lineSubtotal * ((product.tax_rate || 0) / 100);
+      subtotal += lineSubtotal;
+      taxTotal += lineTax;
       saleItems.push({
         product_id: product.id,
         product_name: product.name,
         barcode: product.barcode,
+        sku: product.sku,
+        unit: product.unit,
         quantity: item.quantity,
         price: product.price,
-        subtotal,
+        cost: product.cost || 0,
+        tax_rate: product.tax_rate || 0,
+        subtotal: lineSubtotal,
+        tax: lineTax,
       });
     }
 
@@ -262,12 +342,17 @@ app.post('/api/sales', async (req, res) => {
       await db.collection('inventory_transactions').insertOne({
         product_id: saleItem.product_id,
         product_name: saleItem.product_name,
-        type: 'out',
+        id: uuidv4(),
+        type: 'sale',
         quantity: saleItem.quantity,
+        unit_cost: saleItem.cost,
+        reference_id: saleId,
         notes: `Sale #${saleId.slice(0, 8)}`,
+        created_by: req.body.cashier_id || null,
         created_at: new Date(),
       });
       await db.collection('accounting_entries').insertOne({
+        id: uuidv4(),
         type: 'revenue',
         description: `Sale Revenue: ${saleItem.product_name} x${saleItem.quantity}`,
         amount: saleItem.subtotal,
@@ -279,6 +364,7 @@ app.post('/api/sales', async (req, res) => {
       const product = await db.collection('products').findOne({ id: saleItem.product_id });
       if (product && product.cost > 0) {
         await db.collection('accounting_entries').insertOne({
+          id: uuidv4(),
           type: 'expense',
           description: `Cost of Goods: ${saleItem.product_name} x${saleItem.quantity}`,
           amount: product.cost * saleItem.quantity,
@@ -291,7 +377,11 @@ app.post('/api/sales', async (req, res) => {
 
     const sale = {
       id: saleId,
-      total,
+      invoice_number: `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${saleId.slice(0, 6).toUpperCase()}`,
+      cashier_id: req.body.cashier_id || null,
+      subtotal,
+      tax_total: taxTotal,
+      total: subtotal + taxTotal,
       payment_method,
       status: 'completed',
       created_at: new Date(),
@@ -338,7 +428,7 @@ app.get('/api/inventory/transactions', async (req, res) => {
 
 app.post('/api/inventory/adjust', async (req, res) => {
   try {
-    const { productId, type, quantity, notes } = req.body;
+    const { productId, type, quantity, notes, userId } = req.body;
     const db = await connectToMongo();
 
     const product = await db.collection('products').findOne({ $or: [{ id: productId }, { barcode: productId }] });
@@ -360,16 +450,21 @@ app.post('/api/inventory/adjust', async (req, res) => {
     );
 
     await db.collection('inventory_transactions').insertOne({
+      id: uuidv4(),
       product_id: product.id,
       product_name: product.name,
-      type,
+      type: type === 'in' ? 'adjustment_in' : 'adjustment_out',
       quantity,
+      unit_cost: product.cost || 0,
+      reference_id: null,
       notes: notes || `Adjustment: ${type === 'in' ? '+' : '-'}${quantity}`,
+      created_by: userId || null,
       created_at: new Date(),
     });
 
     if (type === 'in') {
       await db.collection('accounting_entries').insertOne({
+        id: uuidv4(),
         type: 'asset',
         description: `Stock added: ${product.name} x${quantity}`,
         amount: quantity * product.cost,
@@ -379,7 +474,7 @@ app.post('/api/inventory/adjust', async (req, res) => {
       });
     }
 
-    res.json(updated.value);
+    res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -417,9 +512,13 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     const db = await connectToMongo();
-    const user = await db.collection('users').findOne({ username, password }, { projection: { _id: 0, id: 1, username: 1, role: 1 } });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-    res.json(user);
+    const user = await db.collection('users').findOne({ username, active: true });
+    if (!user || !(await bcrypt.compare(password || '', user.password_hash))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    await db.collection('users').updateOne({ id: user.id }, { $set: { last_login_at: new Date(), updated_at: new Date() } });
+    const { password_hash, _id, ...safeUser } = user;
+    res.json(safeUser);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -428,8 +527,37 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/categories', async (req, res) => {
   try {
     const db = await connectToMongo();
-    const categories = await db.collection('products').distinct('category', { category: { $ne: null } });
-    res.json(categories.sort());
+    const categories = await db.collection('categories').find({ active: true }, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
+    res.json(categories);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/units', async (req, res) => {
+  try {
+    const db = await connectToMongo();
+    res.json(await db.collection('units').find({ active: true }, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/suppliers', async (req, res) => {
+  try {
+    const db = await connectToMongo();
+    res.json(await db.collection('suppliers').find({ active: true }, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/database/summary', async (req, res) => {
+  try {
+    const db = await connectToMongo();
+    const collections = ['products', 'users', 'categories', 'units', 'suppliers', 'sales', 'inventory_transactions', 'accounting_entries', 'system_settings'];
+    const counts = Object.fromEntries(await Promise.all(collections.map(async (name) => [name, await db.collection(name).countDocuments()])));
+    res.json({ database: db.databaseName, collections: counts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

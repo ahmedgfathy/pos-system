@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
 import { Platform } from 'react-native';
@@ -14,6 +14,18 @@ import AccountingScreen from './src/screens/AccountingScreen';
 import CashierScreen from './src/screens/CashierScreen';
 
 const Tab = createBottomTabNavigator();
+const lightNavigationTheme = {
+  ...DefaultTheme,
+  dark: false,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: colors.primary,
+    background: colors.background,
+    card: colors.surface,
+    text: colors.text,
+    border: colors.border,
+  },
+};
 
 function MainTabs({ user, onLogout }) {
   return (
@@ -76,7 +88,7 @@ export default function App() {
   if (!user) {
     return (
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        <StatusBar style="dark" backgroundColor={colors.background} />
         <LoginScreen onLogin={setUser} />
       </SafeAreaProvider>
     );
@@ -84,8 +96,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <StatusBar style="light" />
+      <NavigationContainer theme={lightNavigationTheme}>
+        <StatusBar style="dark" backgroundColor={colors.background} />
         <MainTabs user={user} onLogout={handleLogout} />
       </NavigationContainer>
     </SafeAreaProvider>

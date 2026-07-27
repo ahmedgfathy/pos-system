@@ -83,7 +83,11 @@ export default function POSScreen({ user, onLogout }) {
     setCart(prev => prev.filter(item => item.product.id !== productId));
   };
 
-  const total = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const taxTotal = cart.reduce((sum, item) => (
+    sum + item.product.price * item.quantity * ((item.product.tax_rate || 0) / 100)
+  ), 0);
+  const total = subtotal + taxTotal;
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
@@ -97,10 +101,10 @@ export default function POSScreen({ user, onLogout }) {
         productId: item.product.id,
         quantity: item.quantity,
       }));
-      const sale = await api.createSale(items, paymentMethod);
+      const sale = await api.createSale(items, paymentMethod, user?.id);
       Alert.alert(
         'Sale Complete',
-        `Total: $${sale.total.toFixed(2)}\nPayment: ${paymentMethod}\nSale ID: ${sale.id.slice(0, 8)}`,
+        `Invoice: ${sale.invoice_number}\nTotal: EGP ${sale.total.toFixed(2)}\nTax: EGP ${sale.tax_total.toFixed(2)}\nPayment: ${paymentMethod}`,
         [{ text: 'OK', onPress: () => setCart([]) }]
       );
     } catch (err) {
@@ -125,7 +129,8 @@ export default function POSScreen({ user, onLogout }) {
     <View style={styles.cartItem}>
       <View style={styles.cartItemInfo}>
         <Text style={styles.cartItemName}>{item.product.name}</Text>
-        <Text style={styles.cartItemPrice}>${(item.product.price * item.quantity).toFixed(2)}</Text>
+        <Text style={styles.cartItemPrice}>EGP {(item.product.price * item.quantity).toFixed(2)}</Text>
+        <Text style={styles.cartItemMeta}>{item.product.sku} · {item.quantity} {item.product.unit || 'pc'}</Text>
       </View>
       <View style={styles.quantityControl}>
         <TouchableOpacity onPress={() => updateQuantity(item.product.id, -1)} style={styles.qtyBtn}>
@@ -183,7 +188,7 @@ export default function POSScreen({ user, onLogout }) {
               <TouchableOpacity style={styles.searchResult} onPress={() => addToCart(item)}>
                 <View>
                   <Text style={styles.searchResultName}>{item.name}</Text>
-                  <Text style={styles.searchResultDetail}>${item.price.toFixed(2)} | Stock: {item.stock}</Text>
+                  <Text style={styles.searchResultDetail}>EGP {item.price.toFixed(2)} | Stock: {item.stock} {item.unit || 'pc'} | {item.sku}</Text>
                 </View>
                 <Text style={styles.addIcon}>+</Text>
               </TouchableOpacity>
@@ -223,8 +228,8 @@ export default function POSScreen({ user, onLogout }) {
         </View>
 
         <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total:</Text>
-          <Text style={styles.totalAmount}>${total.toFixed(2)}</Text>
+          <Text style={styles.totalLabel}>Subtotal: EGP {subtotal.toFixed(2)} · Tax: EGP {taxTotal.toFixed(2)} · Total:</Text>
+          <Text style={styles.totalAmount}>EGP {total.toFixed(2)}</Text>
         </View>
 
         <TouchableOpacity
@@ -291,6 +296,7 @@ const styles = StyleSheet.create({
   cartItemInfo: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   cartItemName: { color: colors.text, fontSize: 16, flex: 1 },
   cartItemPrice: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  cartItemMeta: { color: colors.textMuted, fontSize: 12, marginTop: 3 },
   quantityControl: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qtyBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
   qtyBtnText: { color: colors.text, fontSize: 20, fontWeight: 'bold' },

@@ -16,8 +16,20 @@ services:
       - "8080:80"
     depends_on:
       - backend
+
+  expo:
+    image: node:18-alpine
+    working_dir: /app
+    command: npx expo start --lan --port 8081
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./frontend:/app
     environment:
-      - API_URL=http://backend:3001
+      - REACT_NATIVE_PACKAGER_HOSTNAME=192.168.1.9
+      - EXPO_PUBLIC_API_URL=http://192.168.1.9:3001
+    depends_on:
+      - backend
 
 volumes:
   backend-data:
