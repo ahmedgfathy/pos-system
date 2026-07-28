@@ -22,7 +22,6 @@
       },
       "package": "com.sellit.app",
       "versionCode": 2,
-      "usesCleartextTraffic": true,
       "permissions": [
         "CAMERA"
       ]
@@ -45,7 +44,9 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-font"
     ]
   }
 }

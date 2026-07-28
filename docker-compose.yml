@@ -18,7 +18,7 @@ services:
       - backend
 
   expo:
-    image: node:18-alpine
+    image: node:20-alpine
     working_dir: /app
     command: npx expo start --lan --port 8081
     ports:
